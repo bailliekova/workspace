@@ -3,78 +3,98 @@
 
 import bs4
 import urllib2
-import re
 import json
 import sys
+import us
 
-baseurl='http://elections.nytimes.com/2010/results/'
-state=sys.argv[1]
-try:
-    conn=urllib2.urlopen(baseurl+state)
-except urllib2.URLError, e:
-    print e
-data=conn.read()
-soup=bs4.BeautifulSoup(data)
-divs=soup.findAll('div', {'class':'nytint-results-group'})
-datadict=dict()
-tabledict=dict()
-datadict[state]=dict()
-
-#### CREATE DICTIONARY FROM OFFICE TO RESULT TABLE #####
-for div in divs:
-    tabledict[div.h3.contents[0].strip()]=div.table
+def getFips(state):
+    return us.states.lookup(state).fips
 
 ##### GET PRESIDENT #####
+def getPresident(soup):
+    candlist=[]
+    table=soup.find(lambda tag: tag.name=='div' and tag.attrs and tag.has_key('class') and 'president' in tag['class'] and 'table' in tag['class'])
+    pctreporting=unicode(table.thead.tr.th.span.string).strip()
+    for row in table.tbody.find_all('tr'):
+        try:
+            name=unicode(row.find('td', {'class':'candidate'}).div.string)
+            party=unicode(row.find('td', {'class':'party'}).string).strip()[0]
+            pct=unicode(row.find('td', {'class':'pct'}).string).strip()
+            votes=unicode(row.find('td', {'class':'votes'}).string).strip()
+            candlist.append({'name': name, 'party': party, 'pct': pct, 'reporting': pctreporting, 'votes':votes})
+        except: 
+            continue
+    return candlist
 
 #### GET HOUSE #####
-table=tabledict['House of Representatives']
-candlist=[]
-for row in table.tr.next_siblings:
-    if type(row)!=bs4.element.Tag:
-        continue
-    for cell in row.contents:
-        if type(cell)!=bs4.element.Tag  or not cell.has_key('class'):
+def getHouse(soup):
+    districtdict={}
+    table=soup.find('div', {'class': 'house-of-representatives'})
+    districts=table.tbody.find_all('tr')
+    for district in districts:
+        candlist=[]
+        try:
+            districtnum=district.find('td', {'class':'district'}).string.strip()
+        except:
             continue
-        if 'nytint-district-col' in cell['class']:
-            district=cell.string
-        elif 'nytint-vote-pct-dem' in cell['class']:
-            demcount=re.sub('[^0-9]','', cell.div.span.abbr['title'])
-            demname=cell.div.span.next_sibling.next_sibling.contents[0]
-        elif 'nytint-vote-pct-gop' in cell['class']:
-            repcount=re.sub('[^0-9]','',cell.div.span.abbr['title'])
-            repname=cell.div.span.next_sibling.next_sibling.contents[0]
-        else:
+        try:
+            reporting=district.find('td', {'class':'rpt'}).string.strip()
+        except:
+            reporting='NULL'
+        try:
+            dem=district.find('td', {'class':'dem'})
+            demname=dem.div.span.next_sibling.replace('*', '')
+            dempct=dem.div.span.string.replace('%', '')
+        except:
+            demname='NULL'
+            dempct='NULL'
+        candlist.append({'party': 'D', 'name':demname, 'pct': dempct, 'reporting':reporting})
+        try:
+            rep=district.find('td', {'class': 'rep'})
+            repname=rep.div.span.next_sibling.replace('*', '')
+            reppct=rep.div.span.string.replace('%', '')
+        except:
+            repname='NULL'
+            reppct='NULL'
+        candlist.append({'party': 'R', 'name': repname, 'pct':reppct, 'reporting':reporting})
+        districtdict[districtnum]=candlist
+    return districtdict
+        
+## get Senate ####
+def getSenate(soup):
+    candlist=[]
+    tables=soup.find_all('div', {'class':'senate'})
+    if not tables:
+        return []
+    for t in tables:
+        if 'table' in t['class']: 
+            table=t
+    reporting=table.thead.tr.th.span.string.strip()
+    rows=table.tbody.find_all('tr')
+    for row in rows:
+        try:
+            name=unicode(row.find('td', {'class':'candidate'}).div.string)
+        except:
             continue
-    candlist.append({'party': 'Democrat', 'count':demcount, 'state':state, 'district':district, 'name':demname})
-    candlist.append({'party': 'Republican', 'count':repcount, 'state':state, 'district':district, 'name':repname})
-datadict[state]['house']=candlist
+        party=unicode(row.find('td', {'class':'party'}).string).strip()[0]
+        pct=unicode(row.find('td', {'class':'pct'}).string).strip()
+        votes=unicode(row.find('td', {'class':'votes'}).string).strip()
+        candlist.append({'name': name, 'party': party, 'pct': pct, 'reporting': reporting, 'votes':votes})
+    return candlist
 
-
-#### GET SENATE #####
-if 'Senate' not in tabledict:
+if __name__=='__main__':
+    baseurl='http://elections.nytimes.com/2012/results/states/'
+    state=sys.argv[1]
+    fips=getFips(state.replace('-', ' '))
+    try:
+        conn=urllib2.urlopen(baseurl+state)
+    except urllib2.URLError, e:
+        print e
+    data=conn.read()
+    soup=bs4.BeautifulSoup(data)
+    datadict=dict()
+    datadict['state']=fips
+    datadict['president']=getPresident(soup)
+    datadict['house']=getHouse(soup)
+    datadict['senate']=getSenate(soup)
     print json.dumps(datadict)
-    sys.exit(0)
-table=tabledict['Senate']
-candlist=[]
-for row in table.tr.next_siblings:
-    if type(row)!=bs4.element.Tag or not row.has_key('class'):
-        continue
-    for cell in row.contents:
-        if type(cell)!=bs4.element.Tag or not cell.has_key('class'):
-            continue
-        if 'nytint-candidate'in cell['class']:
-            name=cell.div.string.strip()
-        elif 'nytint-party' in cell['class']:
-            try:
-                party=cell.abbr['title'].strip()
-            except TypeError:
-                party=unicode(cell.string).strip()
-        elif 'nytint-vote-count' in cell['class']:
-            count=cell.string.strip().replace(',', '')
-        else:
-            continue
-    candlist.append({'party':party, 'count': count, 'state':state, 'district':'Sen', 'name':name})
-datadict[state]['senate']=candlist
-
-
-print json.dumps(datadict)
