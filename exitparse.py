@@ -2,12 +2,13 @@ import json
 import dbutils
 import us
 from nytimesparse import getFips 
+import sys
 
 conn=dbutils.connect()
 c=conn.cursor()
-data=json.load(open('/home/anovikova/exits.JSON'))
-
-states=data['2012']['states']
+data=json.load(open('/home/anovikova/workspace/data/senate_exits.JSON'))
+year=sys.argv[1]
+states=data[year]['states']
 
 for state in states:
     if state['state']=='US' or state['state']=='':
@@ -28,6 +29,6 @@ for state in states:
                 other=subsection['values']['other']/100.0
             except TypeError:
                 other='NULL'
-            row=[fips, section['title'], subsection['title'], subsection['values']['dem']/100.0, subsection['values']['rep']/100.0, other, subsection['shareOfElectorate']/100.0, change, 2012]
-            c.execute('INSERT IGNORE INTO exits_2012 VALUES (%s, %s, %s,%s,%s,%s,%s,%s, %s)', row)
+            row=[fips, section['title'], subsection['title'], subsection['values']['dem']/100.0, subsection['values']['rep']/100.0, other, subsection['shareOfElectorate']/100.0, change, int(year), 'senate']
+            c.execute('INSERT IGNORE INTO exits_2012 VALUES (%s, %s, %s,%s,%s,%s,%s,%s, %s, %s)', row)
         conn.commit()

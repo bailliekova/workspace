@@ -3,11 +3,14 @@ import dbutils
 import us
 import re
 from nytimesparse import getFips 
+import sys
 
 conn=dbutils.connect()
 c=conn.cursor()
-data=json.load(open('/home/anovikova/countyresults.JSON'))
-
+if sys.argv[1]='Senate':
+    data=json.load(open('/home/anovikova/workspace/data/results_senate.JSON'))
+elif sys.argv[1]='President':
+    data=json.load(open('/home/anovikova/workspace/data/results_president.JSON'))
 statedict=data['counties']
 
 for state in statedict:
@@ -17,6 +20,6 @@ for state in statedict:
     statefips=getFips(state)
     for candidate in candidates:
         for x in xrange(0, len(pctreporting)):
-            row=[statefips, 'President', 'NULL', candidate['cand_longname'], candidate['party'][0], statedict[state]['county_votes'][candidate['votes_field']][x], pctreporting[x], fipslist[x]]
+            row=[statefips, sys.argv[1], 'NULL', candidate['cand_longname'], candidate['party'][0], statedict[state]['county_votes'][candidate['votes_field']][x], pctreporting[x], fipslist[x]]
             c.execute('REPLACE INTO results_2012 (state, office, district, name, party, votes, reporting, fips_county) VALUES (%s, %s,%s,%s,%s,%s,%s,%s)', row)
     conn.commit()
